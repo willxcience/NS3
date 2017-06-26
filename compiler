@@ -1,0 +1,1 @@
+g++ first.cc -o first -I /usr/local/include/ns3.26 -L /usr/local/lib/ -lns3.26-core-debug -lns3.26-network-debug -lns3.26-point-to-point-debug -lns3.26-internet-debug
