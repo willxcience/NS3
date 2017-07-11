@@ -1,0 +1,23 @@
+g++ lena-dual-stripe.cc -O3 -o lena -I /usr/local/include/ns3.26 -L /usr/local/lib/ \
+-lns3.26-core -lns3.26-network \
+-lns3.26-point-to-point -lns3.26-internet \
+-lns3.26-applications -lns3.26-mobility -lns3.26-lte \
+-lns3.26-buildings -lns3.26-config-store
+
+
+
+g++ test.cc -o test -I/usr/include/python2.7 -lpython2.7 
+
+diff UlRlcStats.txt ../UlRlcStats.txt
+
+
+
+
+#This is for myLte.cc
+g++ myLte.cc -O3 -o test -I/usr/local/include/ns3.26 \
+-I/usr/include/python2.7 \
+-L/usr/local/lib/ \
+-lns3.26-core -lns3.26-network \
+-lns3.26-point-to-point -lns3.26-internet \
+-lns3.26-applications -lns3.26-mobility -lns3.26-lte \
+-lns3.26-buildings -lns3.26-config-store -lpython2.7
