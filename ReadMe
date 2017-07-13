@@ -1,0 +1,21 @@
+1. It seems automatic cell reselection is not supported. Therefore, the the number of users 
+for each ENB will be fixed after the inital cell selection.
+
+Another way is to ue LteEnbRrc Class. UeManager can help to detach and reattach a user equipment.
+
+https://groups.google.com/forum/#!topic/ns-3-users/nvbQBGUa0x8
+https://www.nsnam.org/docs/models/html/lte-design.html#sec-initial-cell-selection
+
+2. CQI SINR?
+https://groups.google.com/forum/#!topic/ns-3-users/23wAwaJO25E
+
+Fading and interference are not introduced yet.
+
+https://www.nsnam.org/docs/models/html/lte-design.html CQI-feedback AMC
+
+https://groups.google.com/forum/#!topic/ns-3-users/VMdYZ-y6oJE
+
+3. Tracing system
+
+It seems tracing has a weird timing system, but this can be solved by introduing global variables.
+Now we can control the time granularity of our controller using Simulator::Schedule().
