@@ -29,6 +29,10 @@
 #include "ns3/applications-module.h"
 #include "ns3/point-to-point-helper.h"
 #include "ns3/config-store.h"
+
+#include <iostream>
+#include <iomanip>
+#include <string>
 //#include "ns3/gtk-config-store.h"
 
 using namespace ns3;
@@ -38,26 +42,25 @@ using namespace std;
 #define numberOfUeNodes 100
 #define D 500
 
-
-//controller
+//Customized controller
 void handler(NetDeviceContainer enbLteDevs, NetDeviceContainer ueLteDevs)
 {
-    cout << Simulator::Now().As(Time::S) << setprecision(4) << endl;
+    //cout << Simulator::Now().As(Time::S) << setw(4) << endl;
 
-    Ptr<LteEnbPhy> enbPhy = enbLteDevs.Get(i)->GetObject<LteEnbNetDevice>()->GetPhy();
+    Ptr<LteEnbPhy> enbPhy = enbLteDevs.Get(0)->GetObject<LteEnbNetDevice>()->GetPhy();
     double currTxPower = enbPhy->GetTxPower();
-
-
-    NS_LOG_FUNCTION_NOARGS ();
-    Config::Connect ("/NodeList/*/DeviceList/*/ComponentCarrierMapUe/*/LteUePhy/ReportCurrentCellRsrpSinr", \
-    MakeBoundCallback (&PhyStatsCalculator::ReportCurrentCellRsrpSinrCallback, m_phyStats));
-
-
 
     //control
     enbPhy->SetTxPower(100.0);
     //for user device
     //Ptr<LteUePhy> enbPhy = enbLteDevs.Get(i)->GetObject<LteUeNetDevice>()->GetPhy();
+}
+
+//Customized Trace Function
+static void ReportCurrentCellRsrpSinr(string context, uint16_t cellId, uint16_t rnti, double rsrp , double sinr)
+{
+    if (cellId != 1 && cellId != 7 && cellId != 19)
+        cout << Simulator::Now().GetSeconds() << " " << cellId << endl;
 }
 
 int main(int argc, char *argv[])
@@ -75,11 +78,38 @@ int main(int argc, char *argv[])
     cmd.Parse(argc, argv);
 
     //set the maxium number of users
-    Config::SetDefault("ns3::LteEnbRrc::SrsPeriodicity", UintegerValue(40));
+    Config::SetDefault("ns3::LteEnbRrc::SrsPeriodicity", UintegerValue(160));
 
     Ptr<LteHelper> lteHelper = CreateObject<LteHelper>();
     Ptr<PointToPointEpcHelper> epcHelper = CreateObject<PointToPointEpcHelper>();
     lteHelper->SetEpcHelper(epcHelper);
+
+    //set up Strongest cell Handover
+    //Details: https://www.nsnam.org/docs/models/html/lte-user.html#sec-automatic-handover
+    lteHelper->SetHandoverAlgorithmType("ns3::A3RsrpHandoverAlgorithm");
+    lteHelper->SetHandoverAlgorithmAttribute("Hysteresis",
+                                             DoubleValue(3.0));
+    lteHelper->SetHandoverAlgorithmAttribute("TimeToTrigger",
+                                             TimeValue(MilliSeconds(256)));
+
+    // NOTE: the PropagationLoss trace source of the SpectrumChannel
+    // works only for single-frequency path loss model.
+    // e.g., it will work with the following models:
+    // ns3::FriisPropagationLossModel,
+    // ns3::TwoRayGroundPropagationLossModel,
+    // ns3::LogDistancePropagationLossModel,
+    // ns3::ThreeLogDistancePropagationLossModel,
+    // ns3::NakagamiPropagationLossModel
+    // ns3::BuildingsPropagationLossModel
+    // etc.
+    // but it WON'T work if you ONLY use SpectrumPropagationLossModels such as:
+    // ns3::FriisSpectrumPropagationLossModel
+    // ns3::ConstantSpectrumPropagationLossModel
+    lteHelper->SetAttribute("PathlossModel", StringValue("ns3::FriisSpectrumPropagationLossModel"));
+
+    //Trace Fading ?
+    //lteHelper->SetAttribute("FadingModel", StringValue("ns3::TraceFadingLossModel"));
+    //lteHelper->SetFadingModelAttribute("TraceFilename", StringValue(fadingTrace));
 
     ConfigStore inputConfig;
     inputConfig.ConfigureDefaults();
@@ -162,12 +192,13 @@ int main(int argc, char *argv[])
     //Set the user equipments positions
     Ptr<ListPositionAllocator> uePositions = CreateObject<ListPositionAllocator>();
     MobilityHelper ueMobility;
-    ueMobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+    ueMobility.SetMobilityModel("ns3::RandomWalk2dMobilityModel",
+                                "Bounds", RectangleValue(Rectangle(-3 * D, 3 * D, -3 * D, 3 * D)));
 
     /* Uniform Random distribute user equipments in */
     for (short i = 0; i < ueNodes.GetN(); i++)
     {
-        double x = CreateObject<UniformRandomVariable>()->GetValue(-4 * D, 4 * D);
+        double x = CreateObject<UniformRandomVariable>()->GetValue(-3 * D, 3 * D);
         double y = CreateObject<UniformRandomVariable>()->GetValue(-2.828 * D, 2.828 * D);
 
         //add the user position Vector(x,y,z)
@@ -247,22 +278,28 @@ int main(int argc, char *argv[])
 
     serverApps.Start(Seconds(0.01));
     clientApps.Start(Seconds(0.01));
-    //lteHelper->EnableTraces();
+    lteHelper->EnableTraces();
+
+    //set up the callback
+    Config::Connect("/NodeList/*/DeviceList/*/LteUePhy/ReportCurrentCellRsrpSinr",
+                    MakeCallback(&ReportCurrentCellRsrpSinr));
 
     //schedule an event every 0.1 as a controller
     Simulator::Schedule(Seconds(0.1), &handler, enbLteDevs, ueLteDevs);
 
     Simulator::Stop(Seconds(simTime));
 
+    //set up a timer to measure the performance
     clock_t start = clock();
     Simulator::Run();
 
     /*GtkConfigStore config;
-  config.ConfigureAttributes();*/
+    config.ConfigureAttributes();*/
     clock_t end = clock();
     Simulator::Destroy();
 
     double time = (double)(end - start) / CLOCKS_PER_SEC;
     cout << "time: " << time << "s" << endl;
+
     return 0;
 }
