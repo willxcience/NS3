@@ -1,4 +1,4 @@
-g++-6 lena-dual-stripe.cc -O3 -o lena -I/usr/local/include/ns3.26 -I/usr/include/python2.7 -L /usr/local/lib/ \
+g++-6 myLte.cc -O3 -o lena -I/usr/local/include/ns3.26 -I/usr/include/python2.7 -L /usr/local/lib/ \
 -lns3.26-core -lns3.26-network \
 -lns3.26-point-to-point -lns3.26-internet \
 -lns3.26-applications -lns3.26-mobility -lns3.26-lte \
@@ -9,3 +9,16 @@ g++-6 lena-dual-stripe.cc -O3 -o lena -I/usr/local/include/ns3.26 -I/usr/include
 g++ test.cc -o test -I/usr/include/python2.7 -lpython2.7 
 
 diff UlRlcStats.txt ../UlRlcStats.txt
+
+
+g++-6 lena-x2-handover-measures.cc -O3 -o test1 -I/usr/local/include/ns3.26 -I/usr/include/python2.7 -L /usr/local/lib/ \
+-lns3.26-core -lns3.26-network \
+-lns3.26-point-to-point -lns3.26-internet \
+-lns3.26-applications -lns3.26-mobility -lns3.26-lte \
+-lns3.26-buildings -lns3.26-config-store -lpython2.7 
+
+g++-6 newLte.cc -O3 -o test2 -I/usr/local/include/ns3.26 -I/usr/include/python2.7 -L /usr/local/lib/ \
+-lns3.26-core -lns3.26-network \
+-lns3.26-point-to-point -lns3.26-internet \
+-lns3.26-applications -lns3.26-mobility -lns3.26-lte \
+-lns3.26-buildings -lns3.26-config-store -lpython2.7 
