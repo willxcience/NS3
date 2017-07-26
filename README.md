@@ -13,7 +13,7 @@ g++ TheFileName.cc -O3 -o OutputName -I/usr/local/include/ns3.26 -I/usr/include/
 -lns3.26-buildings -lns3.26-config-store -lpython2.7 
 
 
-TheFileName is the name of the file you want to compile. OutputName is for the binary execution file.
+TheFileName is the name of the file you want to compile. You can pick any name for OutputName.
 
 To run simulation:
 
