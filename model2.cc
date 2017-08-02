@@ -29,6 +29,7 @@ class UserEquipment
     uint32_t cellid; //which cellid
     uint32_t nodeid;
     double sinr; //SINR averaged among RBs
+    double rsrp;
 
     void init(uint32_t imsi, uint32_t cellid, uint32_t nodeid)
     {
@@ -36,6 +37,7 @@ class UserEquipment
         this->cellid = cellid;
         this->nodeid = nodeid;
         this->sinr = 0;
+        this->rsrp = 0;
     }
 };
 
@@ -48,38 +50,54 @@ uint16_t getNodeNumber(string context)
 }
 
 //Customized controller
+void handler2(NetDeviceContainer enbLteDevs, NetDeviceContainer ueLteDevs)
+{
+    Ptr<LteEnbPhy> enbPhy = enbLteDevs.Get(0)->GetObject<LteEnbNetDevice>()->GetPhy();
+    double currTxPower = enbPhy->GetTxPower();
+
+    //cout << std::setprecision(8) << Simulator::Now().GetSeconds() << "s" \
+         << "Tx Power: " << currTxPower << endl;
+    enbPhy->SetTxPower(30);
+}
 void handler(NetDeviceContainer enbLteDevs, NetDeviceContainer ueLteDevs)
 {
     //Ptr<MobilityModel> mobility = ueLteDevs.Get(1)->GetNode()->GetObject<MobilityModel>();
     //Vector3D pos = mobility->GetPosition();
 
-    Ptr<LteEnbPhy> enbPhy = enbLteDevs.Get(3)->GetObject<LteEnbNetDevice>()->GetPhy();
+    //from 0 to 3
+    Ptr<LteEnbPhy> enbPhy = enbLteDevs.Get(0)->GetObject<LteEnbNetDevice>()->GetPhy();
     double currTxPower = enbPhy->GetTxPower();
 
     //cout << std::setprecision(8) << Simulator::Now().GetSeconds() << "s" \
          << "Tx Power: " << currTxPower << endl;
 
-    enbPhy->SetTxPower(90.0);
+    cout << enbLteDevs.Get(0)->GetObject<LteEnbNetDevice>()->GetPhy()->GetTxPower() << "db" << endl;
+    //enbPhy->SetTxPower(20.0);
 
     //get the applications
     Ptr<PacketSink> sink1 = DynamicCast<PacketSink>(ueLteDevs.Get(0)->GetNode()->GetApplication(0));
     Ptr<PacketSink> sink2 = DynamicCast<PacketSink>(ueLteDevs.Get(1)->GetNode()->GetApplication(0));
     Ptr<PacketSink> sink3 = DynamicCast<PacketSink>(ueLteDevs.Get(2)->GetNode()->GetApplication(0));
     Ptr<PacketSink> sink4 = DynamicCast<PacketSink>(ueLteDevs.Get(3)->GetNode()->GetApplication(0));
-    cout << sink1->GetTotalRx() << " "
+
+    cout << "Received bytes: "
+         << sink1->GetTotalRx() << " "
          << sink2->GetTotalRx() << " "
          << sink3->GetTotalRx() << " "
          << sink4->GetTotalRx() << " " << endl;
+    /**/
     //report the SINR of IMSI 1
 
-    /*
-    cout << "IMSI: " << UEs[0].imsi << " SINR: " << UEs[0].sinr << endl;
-    cout << "IMSI: " << UEs[1].imsi << " SINR: " << UEs[1].sinr << endl;
-    cout << "IMSI: " << UEs[2].imsi << " SINR: " << UEs[2].sinr << endl;
-    cout << "IMSI: " << UEs[3].imsi << " SINR: " << UEs[3].sinr << endl;
-*/
+    cout << "IMSI: " << UEs[0].imsi << " SINR: " << UEs[0].sinr << " RSRP: " << UEs[0].rsrp << endl;
+    cout << "IMSI: " << UEs[1].imsi << " SINR: " << UEs[1].sinr << " RSRP: " << UEs[1].rsrp << endl;
+    cout << "IMSI: " << UEs[2].imsi << " SINR: " << UEs[2].sinr << " RSRP: " << UEs[2].rsrp << endl;
+    cout << "IMSI: " << UEs[3].imsi << " SINR: " << UEs[3].sinr << " RSRP: " << UEs[3].rsrp << endl;
+
+    /* */
+
     //schedule next control
     Simulator::Schedule(Seconds(10.0), &handler, enbLteDevs, ueLteDevs);
+    cout << endl;
 }
 
 //Trace Sink
@@ -89,6 +107,7 @@ static void ReportCurrentCellRsrpSinr(string context, uint16_t cellId, uint16_t 
 
     //record data
     UEs[id].sinr = sinr;
+    UEs[id].rsrp = rsrp;
 }
 
 static void NotifyConnectionEstablishedUe(string context, uint64_t imsi, uint16_t cellid, uint16_t rnti)
@@ -111,20 +130,52 @@ int main(int argc, char *argv[])
     double distance = 500;
     double interPacketInterval = 10;
 
-    //set TX Power of the enbs an the users
-    Config::SetDefault("ns3::LteEnbPhy::TxPower", DoubleValue(30.0));
-    Config::SetDefault("ns3::LteUePhy::TxPower", DoubleValue(10.0));
+    //CtrlErrorModel and DataErrorModel caused the randomness
+    Config::SetDefault("ns3::LteSpectrumPhy::CtrlErrorModelEnabled", BooleanValue(false));
+
+    //Data Error Model is most related to the interference
+    Config::SetDefault("ns3::LteSpectrumPhy::DataErrorModelEnabled", BooleanValue(false));
     
+    
+    Config::SetDefault("ns3::LteHelper::UseIdealRrc", BooleanValue(false));
+    //Config::SetDefault("ns3::LteHelper::UsePdschForCqiGeneration", BooleanValue(true));
+
+    //Config::SetDefault("ns3::LteAmc::AmcModel", EnumValue(LteAmc::PiroEW2010));
+    //Config::SetDefault("ns3::LteAmc::Ber", DoubleValue(0.00005));
+    //GlobalValue::Bind("ChecksumEnabled", BooleanValue(true));
+
+    Config::SetDefault("ns3::LteUePhy::EnableUplinkPowerControl", BooleanValue(false));
+
+    //set TX Power of the enbs an the users
+    Config::SetDefault("ns3::LteEnbPhy::TxPower", DoubleValue(20.0));
+    Config::SetDefault("ns3::LteUePhy::TxPower", DoubleValue(10.0));
+
     Ptr<LteHelper> lteHelper = CreateObject<LteHelper>();
     Ptr<PointToPointEpcHelper> epcHelper = CreateObject<PointToPointEpcHelper>();
     lteHelper->SetEpcHelper(epcHelper);
-    lteHelper->SetSchedulerType("ns3::RrFfMacScheduler");
-    lteHelper->SetAttribute("PathlossModel", StringValue("ns3::FriisSpectrumPropagationLossModel"));
+    //lteHelper->SetSchedulerType("ns3::RrFfMacScheduler");
     lteHelper->SetHandoverAlgorithmType("ns3::NoOpHandoverAlgorithm");
 
-    //Trace Fading ?
+    // NOTE: the PropagationLoss trace source of the SpectrumChannel
+    // works only for single-frequency path loss model.
+    // e.g., it will work with the following models:
+    // ns3::FriisPropagationLossModel,
+    // ns3::TwoRayGroundPropagationLossModel,
+    // ns3::LogDistancePropagationLossModel,
+    // ns3::ThreeLogDistancePropagationLossModel,
+    // ns3::NakagamiPropagationLossModel
+    // ns3::BuildingsPropagationLossModel
+    // etc.
+    // but it WON'T work if you ONLY use SpectrumPropagationLossModels such as:
+    // ns3::FriisSpectrumPropagationLossModel
+    // ns3::ConstantSpectrumPropagationLossModel
+    lteHelper->SetAttribute("PathlossModel", StringValue("ns3::LogDistancePropagationLossModel")); //Trace Fading ?
+
     //lteHelper->SetAttribute("FadingModel", StringValue("ns3::TraceFadingLossModel"));
     //lteHelper->SetFadingModelAttribute("TraceFilename", StringValue(fadingTrace));
+
+    cout << lteHelper->GetFfrAlgorithmType () << endl;
+
 
     /* EPC Settings */
     Ptr<Node> pgw = epcHelper->GetPgwNode();
@@ -138,7 +189,7 @@ int main(int argc, char *argv[])
 
     // Create the Internet
     PointToPointHelper p2ph;
-    p2ph.SetDeviceAttribute("DataRate", DataRateValue(DataRate("1Mb/s")));
+    p2ph.SetDeviceAttribute("DataRate", DataRateValue(DataRate("100Gb/s")));
     p2ph.SetDeviceAttribute("Mtu", UintegerValue(1500));
     p2ph.SetChannelAttribute("Delay", TimeValue(Seconds(0.010)));
     NetDeviceContainer internetDevices = p2ph.Install(pgw, remoteHost);
@@ -176,10 +227,10 @@ int main(int argc, char *argv[])
     //Set the user equipments positions
     MobilityHelper ueMobility;
     Ptr<ListPositionAllocator> uePositions = CreateObject<ListPositionAllocator>();
-    uePositions->Add(Vector(D / 2, D / 2, 10));
-    uePositions->Add(Vector(D * 1.5, D / 2, 10));
-    uePositions->Add(Vector(D / 2, D * 1.5, 10));
-    uePositions->Add(Vector(1.5 * D, D * 1.5, 10));
+    uePositions->Add(Vector(D - 100, D - 100, 10));
+    uePositions->Add(Vector(D + 100, D - 100, 10));
+    uePositions->Add(Vector(D - 100, D + 100, 10));
+    uePositions->Add(Vector(D + 100, D + 100, 10));
     ueMobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
     ueMobility.SetPositionAllocator(uePositions);
     ueMobility.Install(ueNodes);
@@ -199,7 +250,6 @@ int main(int argc, char *argv[])
     Ipv4InterfaceContainer ueIpIface;
     ueIpIface = epcHelper->AssignUeIpv4Address(NetDeviceContainer(ueLteDevs));
 
-    // Assign IP address to UEs, and install applications
     for (uint32_t u = 0; u < ueNodes.GetN(); ++u)
     {
         Ptr<Node> ueNode = ueNodes.Get(u);
@@ -214,18 +264,14 @@ int main(int argc, char *argv[])
     // Install and start applications on UEs and remote host
     uint16_t dlPort = 1234;
     uint16_t ulPort = 2000;
-
-    ApplicationContainer clientApps;
-    ApplicationContainer serverApps;
-
     for (uint32_t u = 0; u < ueNodes.GetN(); ++u)
     {
-
         ++ulPort;
+        ApplicationContainer clientApps;
+        ApplicationContainer serverApps;
 
         PacketSinkHelper dlPacketSinkHelper("ns3::UdpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), dlPort));
         PacketSinkHelper ulPacketSinkHelper("ns3::UdpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), ulPort));
-
         serverApps.Add(dlPacketSinkHelper.Install(ueNodes.Get(u)));
         serverApps.Add(ulPacketSinkHelper.Install(remoteHost));
 
@@ -239,15 +285,15 @@ int main(int argc, char *argv[])
 
         clientApps.Add(dlClient.Install(remoteHost));
         clientApps.Add(ulClient.Install(ueNodes.Get(u)));
-    }
 
-    serverApps.Start(Seconds(0.01));
-    clientApps.Start(Seconds(0.01));
+        serverApps.Start(Seconds(0.01));
+        clientApps.Start(Seconds(0.01));
+    }
 
     lteHelper->AddX2Interface(enbNodes);
 
-      lteHelper->EnableMacTraces ();
-  lteHelper->EnableRlcTraces ();
+    lteHelper->EnableMacTraces();
+    lteHelper->EnableRlcTraces();
 
     //Custom Trace Sinks for measuring Handover
     Config::Connect("/NodeList/*/DeviceList/*/LteUeRrc/ConnectionEstablished",
@@ -257,6 +303,7 @@ int main(int argc, char *argv[])
 
     //Simulator schedules
     Simulator::Schedule(Seconds(1.0), &handler, enbLteDevs, ueLteDevs);
+    Simulator::Schedule(Seconds(5.0), &handler2, enbLteDevs, ueLteDevs);
 
     Simulator::Stop(Seconds(100));
 
