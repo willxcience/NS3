@@ -79,8 +79,9 @@ void handler(NetDeviceContainer enbLteDevs, NetDeviceContainer ueLteDevs, NetDev
 
     
     cout << enbLteDevs.Get(0)->GetObject<LteEnbNetDevice>()->GetPhy()->GetTxPower() << "db" << endl;
+    cout << ueLteDevs.Get(0)->GetObject<LteUeNetDevice>()->GetPhy()->GetTxPower() << "dbm" << endl;
     
-    enbPhy->SetTxPower(40.0);
+    enbPhy->SetTxPower(190.0);
     
 
     
@@ -148,6 +149,12 @@ int main (int argc, char *argv[])
 
   IntegerValue runValue;
   GlobalValue::GetValueByName ("RngRun", runValue);
+      Config::SetDefault("ns3::LteSpectrumPhy::CtrlErrorModelEnabled", BooleanValue(false));
+
+      Config::SetDefault("ns3::LteHelper::UseIdealRrc", BooleanValue(true));
+      Config::SetDefault("ns3::LteEnbPhy::TxPower", DoubleValue(200.0));
+    Config::SetDefault("ns3::LteUePhy::EnableUplinkPowerControl", BooleanValue(false));
+
 
   std::ostringstream tag;
   tag  << "_enbDist" << std::setw (3) << std::setfill ('0') << std::fixed << std::setprecision (0) << enbDist
@@ -157,7 +164,7 @@ int main (int argc, char *argv[])
 
   Ptr<LteHelper> lteHelper = CreateObject<LteHelper> ();
   
-  lteHelper->SetAttribute ("PathlossModel", StringValue ("ns3::FriisSpectrumPropagationLossModel"));
+  lteHelper->SetAttribute ("PathlossModel", StringValue ("ns3::FriisPropagationLossModel"));
 
   // Create Nodes: eNodeB and UE
   NodeContainer enbNodes;
