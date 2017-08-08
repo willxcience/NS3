@@ -1,24 +1,3 @@
-/* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
-/*
- * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation;
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- *
- * Author: Manuel Requena <manuel.requena@cttc.es>
- *         Nicola Baldo <nbaldo@cttc.es>
- */
-
 #include "ns3/lte-helper.h"
 #include "ns3/epc-helper.h"
 #include "ns3/core-module.h"
@@ -32,10 +11,11 @@
 #include "ns3/config-store.h"
 
 #include <iomanip>
+#include <Python.h>
 #include <string>
 
 #define D 5000
-#define OFFSET 100
+#define OFFSET 200
 #define numUes 4
 
 using namespace ns3;
@@ -60,6 +40,8 @@ class UserEquipment
     }
 };
 
+//Global Variables
+PyObject *pModule, *pFunc;
 UserEquipment UEs[numUes];
 
 uint16_t getNodeNumber(string context)
@@ -79,7 +61,28 @@ void handler(NetDeviceContainer enbLteDevs, NetDeviceContainer ueLteDevs)
 
     cout << enbLteDevs.Get(0)->GetObject<LteEnbNetDevice>()->GetPhy()->GetTxPower() << "db" << endl;
 
-    enbPhy->SetTxPower(40.0);
+    PyObject *pArgs, *pValue;
+    pArgs = PyTuple_New(1);
+    PyTuple_SetItem(pArgs, 0, PyInt_FromLong(30));
+
+    /* call */
+    pValue = PyObject_CallObject(pFunc, pArgs);
+
+    int res = PyInt_AsLong(pValue);
+
+    if (currTxPower != res)
+        enbPhy->SetTxPower(res);
+
+    Ptr<PacketSink> sink1 = DynamicCast<PacketSink>(ueLteDevs.Get(0)->GetNode()->GetApplication(0));
+    Ptr<PacketSink> sink2 = DynamicCast<PacketSink>(ueLteDevs.Get(1)->GetNode()->GetApplication(0));
+    Ptr<PacketSink> sink3 = DynamicCast<PacketSink>(ueLteDevs.Get(2)->GetNode()->GetApplication(0));
+    Ptr<PacketSink> sink4 = DynamicCast<PacketSink>(ueLteDevs.Get(3)->GetNode()->GetApplication(0));
+
+    cout << "Received bytes: "
+         << sink1->GetTotalRx() << " "
+         << sink2->GetTotalRx() << " "
+         << sink3->GetTotalRx() << " "
+         << sink4->GetTotalRx() << " " << endl;
 
     cout << "IMSI: " << UEs[0].imsi << " SINR: " << UEs[0].sinr << " RSRP: " << UEs[0].rsrp << endl;
     cout << "IMSI: " << UEs[1].imsi << " SINR: " << UEs[1].sinr << " RSRP: " << UEs[1].rsrp << endl;
@@ -118,30 +121,62 @@ static void NotifyConnectionEstablishedUe(string context, uint64_t imsi, uint16_
     cout << "UE:" << imsi << " initialized!" << endl;
 }
 
+void pythonInit(char *argv)
+{
+    Py_SetProgramName(argv); /* optional but recommended */
+    Py_Initialize();
+
+    if (!Py_IsInitialized())
+    {
+        printf("init error\n");
+        exit(-1);
+    }
+
+    PyRun_SimpleString("import sys");
+    PyRun_SimpleString("sys.path.append('./')");
+    /* import */
+    pModule = PyImport_ImportModule("controller");
+
+    if (!pModule)
+    {
+        printf("Cant open python file!\n");
+        exit(-2);
+    }
+
+    pFunc = PyObject_GetAttrString(pModule, "control");
+    cout << "loaded" << endl;
+}
+
 int main(int argc, char *argv[])
 {
-    double simTime = 500.0;
+    //Initialize python
+    pythonInit(argv[0]);
+
+    double simTime = 100.0;
     ConfigStore inputConfig;
     inputConfig.ConfigureDefaults();
 
     //CtrlErrorModel and DataErrorModel caused the randomness
-    Config::SetDefault("ns3::LteSpectrumPhy::CtrlErrorModelEnabled", BooleanValue(false));
+    Config::SetDefault("ns3::LteSpectrumPhy::CtrlErrorModelEnabled", BooleanValue(true));
 
     //Data Error Model is most related to the interference
-    Config::SetDefault("ns3::LteSpectrumPhy::DataErrorModelEnabled", BooleanValue(false));
-    
-    //Radio link
-    Config::SetDefault ("ns3::LteEnbRrc::EpsBearerToRlcMapping",EnumValue(ns3::LteEnbRrc::RLC_SM_ALWAYS));
+    Config::SetDefault("ns3::LteSpectrumPhy::DataErrorModelEnabled", BooleanValue(true));
 
+    //Radio link
+    Config::SetDefault("ns3::LteEnbRrc::EpsBearerToRlcMapping", EnumValue(ns3::LteEnbRrc::RLC_UM_ALWAYS));
+    Config::SetDefault("ns3::LteUePhy::EnableUplinkPowerControl", BooleanValue(false));
+
+    //use PDCCH
+    Config::SetDefault("ns3::LteHelper::UsePdschForCqiGeneration", BooleanValue(false));
 
     Config::SetDefault("ns3::LteEnbPhy::TxPower", DoubleValue(30.0));
     Config::SetDefault("ns3::LteUePhy::TxPower", DoubleValue(10.0));
-
 
     Ptr<LteHelper> lteHelper = CreateObject<LteHelper>();
     Ptr<PointToPointEpcHelper> epcHelper = CreateObject<PointToPointEpcHelper>();
     lteHelper->SetEpcHelper(epcHelper);
 
+    //this is set by default
     lteHelper->SetAttribute("PathlossModel", StringValue("ns3::FriisSpectrumPropagationLossModel"));
     lteHelper->SetHandoverAlgorithmType("ns3::NoOpHandoverAlgorithm");
 
@@ -171,7 +206,7 @@ int main(int argc, char *argv[])
     Ipv4StaticRoutingHelper ipv4RoutingHelper;
     Ptr<Ipv4StaticRouting> remoteHostStaticRouting = ipv4RoutingHelper.GetStaticRouting(remoteHost->GetObject<Ipv4>());
     remoteHostStaticRouting->AddNetworkRouteTo(Ipv4Address("7.0.0.0"), Ipv4Mask("255.0.0.0"), 1);
-    
+
     /***********Mobility***********/
     NodeContainer ueNodes;
     NodeContainer enbNodes;
@@ -220,20 +255,18 @@ int main(int argc, char *argv[])
         Ptr<Ipv4StaticRouting> ueStaticRouting = ipv4RoutingHelper.GetStaticRouting(ue->GetObject<Ipv4>());
         ueStaticRouting->SetDefaultRoute(epcHelper->GetUeDefaultGatewayAddress(), 1);
     }
-    /**/
-    
 
     lteHelper->Attach(ueLteDevs.Get(0), enbLteDevs.Get(0));
     lteHelper->Attach(ueLteDevs.Get(1), enbLteDevs.Get(1));
     lteHelper->Attach(ueLteDevs.Get(2), enbLteDevs.Get(2));
     lteHelper->Attach(ueLteDevs.Get(3), enbLteDevs.Get(3));
 
+    Ptr<EpcTft> tft = Create<EpcTft>();
+    //types of epsbearer
+    lteHelper->ActivateDedicatedEpsBearer(ueLteDevs.Get(0), EpsBearer(EpsBearer::GBR_CONV_VOICE), tft);
 
-    //Ptr<EpcTft> tft = Create<EpcTft>();
-    //lteHelper->ActivateDedicatedEpsBearer(ueLteDevs.Get(0), EpsBearer(EpsBearer::GBR_CONV_VOICE), tft);
-
-    
-    /*uint16_t dlPort = 1234;
+    //install a downlink app, uplink is not considered here
+    uint16_t dlPort = 1234;
     uint16_t ulPort = 2000;
     for (uint32_t u = 0; u < ueNodes.GetN(); u++)
     {
@@ -243,21 +276,10 @@ int main(int argc, char *argv[])
                                           InetSocketAddress(Ipv4Address::GetAny(), dlPort));
         ApplicationContainer serverApps = packetSinkHelper.Install(ue);
         serverApps.Start(Seconds(0.01));
-        UdpClientHelper client(ueIpIface.GetAddress(0), dlPort);
+        UdpClientHelper client(ueIpIface.GetAddress(u), dlPort);
         ApplicationContainer clientApps = client.Install(remoteHost);
         clientApps.Start(Seconds(0.01));
     }
-    */
-
-    // Activate a data radio bearer each UE
-    /*
-    enum EpsBearer::Qci q = EpsBearer::GBR_CONV_VOICE;
-    EpsBearer bearer(q);
-    lteHelper->ActivateDataRadioBearer(ueLteDevs.Get(0), bearer);
-    lteHelper->ActivateDataRadioBearer(ueLteDevs.Get(1), bearer);
-    lteHelper->ActivateDataRadioBearer(ueLteDevs.Get(2), bearer);
-    lteHelper->ActivateDataRadioBearer(ueLteDevs.Get(3), bearer);
-    /**/
 
     //Custom Trace Sinks for measuring Handover
     Config::Connect("/NodeList/*/DeviceList/*/LteUeRrc/ConnectionEstablished",
@@ -265,8 +287,7 @@ int main(int argc, char *argv[])
     Config::Connect("/NodeList/*/DeviceList/*/LteUePhy/ReportCurrentCellRsrpSinr",
                     MakeCallback(&ReportCurrentCellRsrpSinr));
 
-
-    lteHelper->EnableTraces();
+    lteHelper->EnablePhyTraces();
 
     Simulator::Schedule(Seconds(1.0), &handler, enbLteDevs, ueLteDevs);
 
@@ -282,5 +303,7 @@ int main(int argc, char *argv[])
     double time = (double)(end - start) / CLOCKS_PER_SEC;
     cout << simTime << "s took: " << time << "s to finish." << endl;
     Simulator::Destroy();
+
+    Py_Finalize();
     return 0;
 }
