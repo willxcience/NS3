@@ -19,6 +19,10 @@
 #include <Python.h>
 #include <numpy/arrayobject.h>
 
+#define D 500
+#define OFFSET 300
+#define numUes 4
+
 using namespace ns3;
 using namespace std;
 
@@ -41,6 +45,123 @@ class UserEquipment
     }
 };
 
+//My own customized Application
+class MyApp : public Application
+{
+  public:
+    MyApp();
+    virtual ~MyApp();
+
+    /**
+   * Register this type.
+   * \return The TypeId.
+   */
+    static TypeId GetTypeId(void);
+    void Setup(Ptr<Socket> socket, Address address, uint32_t packetSize, uint32_t nPackets, DataRate dataRate);
+
+  private:
+    virtual void StartApplication(void);
+    virtual void StopApplication(void);
+
+    void ScheduleTx(void);
+    void SendPacket(void);
+
+    Ptr<Socket> m_socket;
+    Address m_peer;
+    uint32_t m_packetSize;
+    uint32_t m_nPackets;
+    DataRate m_dataRate;
+    EventId m_sendEvent;
+    bool m_running;
+    uint32_t m_packetsSent;
+};
+
+MyApp::MyApp()
+    : m_socket(0),
+      m_peer(),
+      m_packetSize(0),
+      m_nPackets(0),
+      m_dataRate(0),
+      m_sendEvent(),
+      m_running(false),
+      m_packetsSent(0)
+{
+}
+
+MyApp::~MyApp()
+{
+    m_socket = 0;
+}
+
+/* static */
+TypeId MyApp::GetTypeId(void)
+{
+    static TypeId tid = TypeId("MyApp")
+                            .SetParent<Application>()
+                            .AddConstructor<MyApp>();
+    return tid;
+}
+
+void MyApp::Setup(Ptr<Socket> socket, Address address, uint32_t packetSize, uint32_t nPackets, DataRate dataRate)
+{
+    m_socket = socket;
+    m_peer = address;
+    m_packetSize = packetSize;
+    m_nPackets = nPackets;
+    m_dataRate = dataRate;
+}
+
+void MyApp::StartApplication(void)
+{
+    m_running = true;
+    m_packetsSent = 0;
+    m_socket->Bind();
+    m_socket->Connect(m_peer);
+    SendPacket();
+}
+
+void MyApp::StopApplication(void)
+{
+    m_running = false;
+
+    if (m_sendEvent.IsRunning())
+    {
+        Simulator::Cancel(m_sendEvent);
+    }
+
+    if (m_socket)
+    {
+        m_socket->Close();
+    }
+}
+
+void MyApp::SendPacket(void)
+{
+    Ptr<Packet> packet = Create<Packet>(m_packetSize);
+    m_socket->Send(packet);
+
+
+    if (++m_packetsSent < m_nPackets)
+    {
+        ScheduleTx();
+    } else if (m_packetsSent = m_nPackets)
+    {
+        cout << Simulator::Now().GetSeconds() << "s" << endl;
+        m_packetsSent++;
+    }
+}
+
+void MyApp::ScheduleTx(void)
+{
+    if (m_running)
+    {
+        Time tNext(Seconds(m_packetSize * 8 / static_cast<double>(m_dataRate.GetBitRate())));
+        m_sendEvent = Simulator::Schedule(tNext, &MyApp::SendPacket, this);
+    } else {
+        cout << "Wrong" << endl;
+    }
+}
+
 //Global Variables
 PyObject *pModule, *pFunc;
 UserEquipment UEs[1];
@@ -59,11 +180,16 @@ void handler(NetDeviceContainer enbLteDevs, NetDeviceContainer ueLteDevs)
     Ptr<LteEnbPhy> enbPhy = enbLteDevs.Get(0)->GetObject<LteEnbNetDevice>()->GetPhy();
     double currTxPower = enbPhy->GetTxPower();
 
-    cout << "IMSI: " << UEs[0].imsi << " SINR: " << UEs[0].sinr << " RSRP: " << UEs[0].rsrp << endl;
+    Ptr<PacketSink> sink1 = DynamicCast<PacketSink>(ueLteDevs.Get(0)->GetNode()->GetApplication(0));
+
+   //cout << "Received bytes: "
+   //      << sink1->GetTotalRx() << endl;
+
+    //cout << "IMSI: " << UEs[0].imsi << " SINR: " << UEs[0].sinr << " RSRP: " << UEs[0].rsrp << endl;
 
     if (counter < 5000)
     {
-        cout << counter << endl;
+        //cout << counter << endl;
         data[counter++] = UEs[0].sinr;
     }
 
@@ -97,6 +223,17 @@ static void NotifyConnectionEstablishedUe(string context, uint64_t imsi, uint16_
     cout << "UE:" << imsi << " initialized!" << endl;
 }
 
+static void CwndChange(uint32_t oldCwnd, uint32_t newCwnd)
+{
+    //cout << Simulator::Now().GetSeconds() << "s " << oldCwnd << "  "
+    //     << newCwnd << endl;
+}
+
+static void RxDrop(Ptr<const Packet> p)
+{
+    cout << "RxDrop at " << Simulator::Now().GetSeconds() << endl;
+}
+
 void pythonInit(char *argv)
 {
     Py_SetProgramName(argv); /* optional but recommended */
@@ -110,11 +247,10 @@ void pythonInit(char *argv)
 
     PyRun_SimpleString("import sys");
     PyRun_SimpleString("sys.path.append('./')");
-    
+
     //load and check module
     PyObject *pName = PyUnicode_FromString("controller");
     pModule = PyImport_Import(pName);
-
 
     if (!pModule)
     {
@@ -125,7 +261,7 @@ void pythonInit(char *argv)
     pFunc = PyObject_GetAttrString(pModule, "myplot");
 
     //required for the C++_API
-    import_array ();
+    import_array();
 
     Py_DECREF(pName);
     cout << "loaded" << endl;
@@ -136,7 +272,7 @@ int main(int argc, char *argv[])
     //Initialize python
     pythonInit(argv[0]);
 
-    double simTime = 520.0;
+    double simTime = 200.0;
     ConfigStore inputConfig;
     inputConfig.ConfigureDefaults();
 
@@ -144,33 +280,25 @@ int main(int argc, char *argv[])
     Config::SetDefault("ns3::LteSpectrumPhy::CtrlErrorModelEnabled", BooleanValue(false));
 
     //Data Error Model is most related to the interference
-    Config::SetDefault("ns3::LteSpectrumPhy::DataErrorModelEnabled", BooleanValue(true));
+    Config::SetDefault("ns3::LteSpectrumPhy::DataErrorModelEnabled", BooleanValue(false));
 
     //Radio link
-    Config::SetDefault("ns3::LteEnbRrc::EpsBearerToRlcMapping", EnumValue(ns3::LteEnbRrc::RLC_UM_ALWAYS));
-    Config::SetDefault("ns3::LteUePhy::EnableUplinkPowerControl", BooleanValue(false));
+    Config::SetDefault("ns3::LteEnbRrc::EpsBearerToRlcMapping", EnumValue(ns3::LteEnbRrc::RLC_AM_ALWAYS));
+    Config::SetDefault("ns3::LteUePhy::EnableUplinkPowerControl", BooleanValue(true));
 
     //use PDCCH
     Config::SetDefault("ns3::LteHelper::UsePdschForCqiGeneration", BooleanValue(false));
 
     Config::SetDefault("ns3::LteEnbPhy::TxPower", DoubleValue(30.0));
-    Config::SetDefault("ns3::LteUePhy::TxPower", DoubleValue(10.0));
+    //Config::SetDefault("ns3::LteUePhy::TxPower", DoubleValue(10.0));
 
     Ptr<LteHelper> lteHelper = CreateObject<LteHelper>();
     Ptr<PointToPointEpcHelper> epcHelper = CreateObject<PointToPointEpcHelper>();
     lteHelper->SetEpcHelper(epcHelper);
 
     //this is set by default
-    //lteHelper->SetAttribute("PathlossModel", StringValue("ns3::FriisSpectrumPropagationLossModel"));
+    lteHelper->SetAttribute("PathlossModel", StringValue("ns3::FriisSpectrumPropagationLossModel"));
     lteHelper->SetHandoverAlgorithmType("ns3::NoOpHandoverAlgorithm");
-
-    lteHelper->SetFadingModel("ns3::TraceFadingLossModel");
-    lteHelper->SetFadingModelAttribute("TraceFilename", StringValue("fading_trace.fad"));
-
-    lteHelper->SetFadingModelAttribute("TraceLength", TimeValue(Seconds(10.0)));
-    lteHelper->SetFadingModelAttribute("SamplesNum", UintegerValue(10000));
-    lteHelper->SetFadingModelAttribute("WindowSize", TimeValue(Seconds(0.5)));
-    lteHelper->SetFadingModelAttribute("RbNum", UintegerValue(100));
 
     /***********Internet***********/
 
@@ -185,9 +313,12 @@ int main(int argc, char *argv[])
 
     // Create the internet
     PointToPointHelper p2ph;
+
+    //The data rate and delay is here
     p2ph.SetDeviceAttribute("DataRate", DataRateValue(DataRate("100Gb/s")));
     p2ph.SetDeviceAttribute("Mtu", UintegerValue(1500));
     p2ph.SetChannelAttribute("Delay", TimeValue(Seconds(0.010)));
+
     NetDeviceContainer internetDevices = p2ph.Install(pgw, remoteHost);
     Ipv4AddressHelper ipv4h;
     ipv4h.SetBase("1.0.0.0", "255.0.0.0");
@@ -223,12 +354,18 @@ int main(int argc, char *argv[])
     ueMobility.SetPositionAllocator(uePositions);
     ueMobility.Install(ueNodes);
 
-    ueNodes.Get(0)->GetObject<ConstantVelocityMobilityModel>()->SetVelocity(Vector(1.0, 0.0, 0.0));
+    ueNodes.Get(0)->GetObject<ConstantVelocityMobilityModel>()->SetVelocity(Vector(0.0, 0.0, 0.0));
 
     /***Next Part***/
     // Install LTE Devices to the nodes
     NetDeviceContainer enbLteDevs = lteHelper->InstallEnbDevice(enbNodes);
     NetDeviceContainer ueLteDevs = lteHelper->InstallUeDevice(ueNodes);
+
+    //Error Model
+    //Ptr<RateErrorModel> em = CreateObjectWithAttributes<RateErrorModel>(
+    //    "ErrorRate", DoubleValue(0.00001));
+    //internetDevices.Get(0)->SetAttribute("ReceiveErrorModel", PointerValue(em));
+    
 
     // we install the IP stack on the UEs
     internet.Install(ueNodes);
@@ -246,28 +383,36 @@ int main(int argc, char *argv[])
     }
 
     lteHelper->Attach(ueLteDevs);
-
-    Ptr<EpcTft> tft = Create<EpcTft>();
-    //types of epsbearer
-    lteHelper->ActivateDedicatedEpsBearer(ueLteDevs.Get(0), EpsBearer(EpsBearer::GBR_CONV_VOICE), tft);
+    lteHelper->AddX2Interface(enbNodes);
 
     //install a downlink app, uplink is not considered here
     uint16_t dlPort = 1234;
     uint16_t ulPort = 2000;
+
     for (uint32_t u = 0; u < ueNodes.GetN(); u++)
     {
-        ulPort++;
-        Ptr<Node> ue = ueNodes.Get(u);
-        PacketSinkHelper packetSinkHelper("ns3::UdpSocketFactory",
-                                          InetSocketAddress(Ipv4Address::GetAny(), dlPort));
-        ApplicationContainer serverApps = packetSinkHelper.Install(ue);
+
+        PacketSinkHelper dlPacketSinkHelper("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), dlPort));
+        ApplicationContainer serverApps = dlPacketSinkHelper.Install(ueNodes.Get(u));
         serverApps.Start(Seconds(1.0));
-        UdpClientHelper client(ueIpIface.GetAddress(u), dlPort);
-        client.SetAttribute("Interval", TimeValue(MilliSeconds(10)));
-        client.SetAttribute("MaxPackets", UintegerValue(10000));
-        ApplicationContainer clientApps = client.Install(remoteHost);
-        clientApps.Start(Seconds(1.0));
+
+        Ptr<Socket> mySocket = Socket::CreateSocket(remoteHost, TcpSocketFactory::GetTypeId());
+        mySocket->TraceConnectWithoutContext("CongestionWindow",
+                                             MakeCallback(&CwndChange));
+
+        Ptr<MyApp> clientApp = CreateObject<MyApp>();
+        Address sinkAddress(InetSocketAddress(ueIpIface.GetAddress(u), dlPort));
+        clientApp->Setup(mySocket, sinkAddress, 1040, 1000, DataRate("10Mbps"));
+        remoteHost->AddApplication(clientApp);
+        clientApp->SetStartTime(Seconds(1.0));
+        clientApp->SetStopTime(Seconds(simTime));
+
+        lteHelper->ActivateDedicatedEpsBearer(ueLteDevs, EpsBearer(EpsBearer::NGBR_VIDEO_TCP_DEFAULT), EpcTft::Default());
     }
+
+   // internetDevices.Get(0)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback (&RxDrop));
+
+
     //Custom Trace Sinks for measuring Handover
     Config::Connect("/NodeList/*/DeviceList/*/LteUeRrc/ConnectionEstablished",
                     MakeCallback(&NotifyConnectionEstablishedUe));
@@ -286,36 +431,14 @@ int main(int argc, char *argv[])
 
     double time = (double)(end - start) / CLOCKS_PER_SEC;
     cout << simTime << "s took: " << time << "s to finish." << endl;
+
+    Ptr<PacketSink> sink1 = DynamicCast<PacketSink>(ueNodes.Get(0)->GetApplication(0));
+
+    std::cout << "Received bytes: "
+              << sink1->GetTotalRx() << std::endl;
+
     Simulator::Destroy();
-
-   
-    //Passing an array to Python
-    npy_intp dims[1] = { 5000 }; //Time interval
-    PyObject *py_array;
-    py_array = PyArray_SimpleNewFromData (1, dims, NPY_DOUBLE, data);
-
-
-    PyObject *pDict, *pArgs, *pValue;
-    // pDict is a borrowed reference
-    pDict = PyModule_GetDict (pModule);                 
-
-    pArgs = PyTuple_New (1);
-    PyTuple_SetItem (pArgs, 0, py_array);
-
-    if (PyCallable_Check (pFunc)) 
-    {
-        PyObject_CallObject (pFunc, pArgs);
-    } else 
-    {
-        printf ("Function not callable !\n");
-    }
-
-
-    // Clean up
-    Py_DECREF (py_array);                               
-    Py_DECREF (pModule);
-    Py_DECREF (pDict);
-    Py_DECREF (pFunc);
+    Py_DECREF(pFunc);
 
     return 0;
 }
