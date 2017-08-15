@@ -9,6 +9,9 @@
 #include "ns3/applications-module.h"
 #include "ns3/point-to-point-helper.h"
 #include "ns3/config-store.h"
+
+#include <fstream>
+#include <iostream>
 #include <iomanip>
 #include <string>
 
@@ -46,7 +49,7 @@ class UserEquipment
 
 //Global Variables
 PyObject *pModule, *pFunc;
-UserEquipment UEs[numUes];
+UserEquipment UEs[1];
 
 uint16_t getNodeNumber(string context)
 {
@@ -54,20 +57,13 @@ uint16_t getNodeNumber(string context)
     return atoi(context.substr(10, pos - 10).c_str());
 }
 
-int count1 = 0;
-double sum = 0;
+int counter = 0;
+double data[5000] = {0};
 
 void handler(NetDeviceContainer enbLteDevs, NetDeviceContainer ueLteDevs)
 {
-    //Ptr<MobilityModel> mobility = ueLteDevs.Get(1)->GetNode()->GetObject<MobilityModel>();
-    //Vector3D pos = mobility->GetPosition();
-
-    //srand(999);
-    //from 0 to 3
     Ptr<LteEnbPhy> enbPhy = enbLteDevs.Get(0)->GetObject<LteEnbNetDevice>()->GetPhy();
     double currTxPower = enbPhy->GetTxPower();
-
-    cout << enbLteDevs.Get(0)->GetObject<LteEnbNetDevice>()->GetPhy()->GetTxPower() << "db" << endl;
 
     PyObject *pArgs, *pValue;
     //pArgs = PyTuple_New(1);
@@ -79,38 +75,27 @@ void handler(NetDeviceContainer enbLteDevs, NetDeviceContainer ueLteDevs)
     //int res = PyInt_AsLong(pValue);
 
     //if (currTxPower != res
-    enbPhy->SetTxPower(40);
+    //enbPhy->SetTxPower(40);
 
-    Ptr<PacketSink> sink1 = DynamicCast<PacketSink>(ueLteDevs.Get(0)->GetNode()->GetApplication(0));
-    Ptr<PacketSink> sink2 = DynamicCast<PacketSink>(ueLteDevs.Get(1)->GetNode()->GetApplication(0));
-    Ptr<PacketSink> sink3 = DynamicCast<PacketSink>(ueLteDevs.Get(2)->GetNode()->GetApplication(0));
-    Ptr<PacketSink> sink4 = DynamicCast<PacketSink>(ueLteDevs.Get(3)->GetNode()->GetApplication(0));
+     cout << "IMSI: " << UEs[0].imsi << " SINR: " << UEs[0].sinr << " RSRP: " << UEs[0].rsrp << endl;
 
-    cout << "Received bytes: "
-         << sink1->GetTotalRx()/1024 << " "
-         << sink2->GetTotalRx()/1024 << " "
-         << sink3->GetTotalRx()/1024 << " "
-         << sink4->GetTotalRx()/1024 << " " << endl;
-
-
-    cout << "IMSI: " << UEs[0].imsi << " SINR: " << UEs[0].sinr << " RSRP: " << UEs[0].rsrp << endl;
-    cout << "IMSI: " << UEs[1].imsi << " SINR: " << UEs[1].sinr << " RSRP: " << UEs[1].rsrp << endl;
-    cout << "IMSI: " << UEs[2].imsi << " SINR: " << UEs[2].sinr << " RSRP: " << UEs[2].rsrp << endl;
-    cout << "IMSI: " << UEs[3].imsi << " SINR: " << UEs[3].sinr << " RSRP: " << UEs[3].rsrp << endl;
-
-    /* */
+    if (counter < 5000)
+    {
+        cout << counter << endl;
+        data[counter++] = UEs[0].sinr;
+    }
 
     //schedule next control
     Simulator::Schedule(Seconds(0.1), &handler, enbLteDevs, ueLteDevs);
-    cout << endl;
+    //cout << endl;
 }
 
 //Trace Sink
 static void ReportCurrentCellRsrpSinr(string context, uint16_t cellId, uint16_t rnti, double rsrp, double sinr)
 {
-    int id = getNodeNumber(context) - 6;
+    int id = getNodeNumber(context) - 3;
 
-    //cout << "CellId " << cellId << " SINR: " << sinr << endl;
+    //cout << "CellId " << cellId << " SINR: " << id << endl;
     //record data
 
     //cout << id << endl;
@@ -161,7 +146,7 @@ int main(int argc, char *argv[])
     //Initialize python
     pythonInit(argv[0]);
 
-    double simTime = 20.0;
+    double simTime = 500.0;
     ConfigStore inputConfig;
     inputConfig.ConfigureDefaults();
 
@@ -189,14 +174,15 @@ int main(int argc, char *argv[])
     //lteHelper->SetAttribute("PathlossModel", StringValue("ns3::FriisSpectrumPropagationLossModel"));
     lteHelper->SetHandoverAlgorithmType("ns3::NoOpHandoverAlgorithm");
 
-    
     lteHelper->SetFadingModel("ns3::TraceFadingLossModel");
-    //lteHelper->SetFadingModelAttribute ("TraceFilename", StringValue ("fading_trace.fad"));
-    lteHelper->SetFadingModelAttribute ("TraceFilename", StringValue ("fading_trace_EPA_3kmph.fad"));
-    lteHelper->SetFadingModelAttribute ("TraceLength", TimeValue (Seconds (10.0)));
-    lteHelper->SetFadingModelAttribute ("SamplesNum", UintegerValue (10000));
-    lteHelper->SetFadingModelAttribute ("WindowSize", TimeValue (Seconds (0.5)));
-    lteHelper->SetFadingModelAttribute ("RbNum", UintegerValue (100));
+    lteHelper->SetFadingModelAttribute ("TraceFilename", StringValue ("fading_trace_ETU_3kmph.fad"));
+
+    //lteHelper->SetFadingModelAttribute("TraceFilename", StringValue("fading_trace_EPA_3kmph.fad"));
+    lteHelper->SetFadingModelAttribute("TraceLength", TimeValue(Seconds(10.0)));
+    lteHelper->SetFadingModelAttribute("SamplesNum", UintegerValue(10000));
+    lteHelper->SetFadingModelAttribute("WindowSize", TimeValue(Seconds(0.5)));
+    lteHelper->SetFadingModelAttribute("RbNum", UintegerValue(100));
+    
 
     /***********Internet***********/
 
@@ -228,16 +214,13 @@ int main(int argc, char *argv[])
     /***********Mobility***********/
     NodeContainer ueNodes;
     NodeContainer enbNodes;
-    enbNodes.Create(4);
-    ueNodes.Create(4); //4 user equipments
+    enbNodes.Create(1);
+    ueNodes.Create(1); //4 user equipments
 
     // Install Mobility Model in eNB
     Ptr<ListPositionAllocator> enbPositions = CreateObject<ListPositionAllocator>();
     //Quad 1
-    enbPositions->Add(Vector(D / 2, D / 2, 10));
-    enbPositions->Add(Vector(D * 1.5, D / 2, 10));
-    enbPositions->Add(Vector(D / 2, D * 1.5, 10));
-    enbPositions->Add(Vector(1.5 * D, D * 1.5, 10));
+    enbPositions->Add(Vector(0, 0, 10));
     MobilityHelper enbMobility;
     enbMobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
     enbMobility.SetPositionAllocator(enbPositions);
@@ -246,13 +229,13 @@ int main(int argc, char *argv[])
     //Set the user equipments positions
     MobilityHelper ueMobility;
     Ptr<ListPositionAllocator> uePositions = CreateObject<ListPositionAllocator>();
-    uePositions->Add(Vector(D - OFFSET, D - OFFSET, 10));
-    uePositions->Add(Vector(D + OFFSET, D - OFFSET, 10));
-    uePositions->Add(Vector(D - OFFSET, D + OFFSET, 10));
-    uePositions->Add(Vector(D + OFFSET, D + OFFSET, 10));
-    ueMobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+    uePositions->Add(Vector(100, 0, 10));
+    ueMobility.SetMobilityModel("ns3::ConstantVelocityMobilityModel");
+
     ueMobility.SetPositionAllocator(uePositions);
     ueMobility.Install(ueNodes);
+
+    ueNodes.Get(0)->GetObject<ConstantVelocityMobilityModel>()->SetVelocity(Vector(1.0, 0.0, 0.0));
 
     /***Next Part***/
     // Install LTE Devices to the nodes
@@ -274,10 +257,7 @@ int main(int argc, char *argv[])
         ueStaticRouting->SetDefaultRoute(epcHelper->GetUeDefaultGatewayAddress(), 1);
     }
 
-    lteHelper->Attach(ueLteDevs.Get(0), enbLteDevs.Get(0));
-    lteHelper->Attach(ueLteDevs.Get(1), enbLteDevs.Get(1));
-    lteHelper->Attach(ueLteDevs.Get(2), enbLteDevs.Get(2));
-    lteHelper->Attach(ueLteDevs.Get(3), enbLteDevs.Get(3));
+    lteHelper->Attach(ueLteDevs);
 
     Ptr<EpcTft> tft = Create<EpcTft>();
     //types of epsbearer
@@ -300,14 +280,11 @@ int main(int argc, char *argv[])
         ApplicationContainer clientApps = client.Install(remoteHost);
         clientApps.Start(Seconds(1.0));
     }
-
     //Custom Trace Sinks for measuring Handover
     Config::Connect("/NodeList/*/DeviceList/*/LteUeRrc/ConnectionEstablished",
                     MakeCallback(&NotifyConnectionEstablishedUe));
     Config::Connect("/NodeList/*/DeviceList/*/LteUePhy/ReportCurrentCellRsrpSinr",
                     MakeCallback(&ReportCurrentCellRsrpSinr));
-
-    lteHelper->EnablePhyTraces();
 
     Simulator::Schedule(Seconds(1.0), &handler, enbLteDevs, ueLteDevs);
 
@@ -322,6 +299,15 @@ int main(int argc, char *argv[])
     double time = (double)(end - start) / CLOCKS_PER_SEC;
     cout << simTime << "s took: " << time << "s to finish." << endl;
     Simulator::Destroy();
+
+    ofstream myfile("data.txt", ios::trunc);
+
+    for (int i = 0; i < 5000; i++)
+    {
+        myfile << data[i] << " ";
+    }
+
+    myfile.close();
 
     Py_Finalize();
     return 0;
